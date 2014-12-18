@@ -1,8 +1,7 @@
-# DBModel
+AXDBTool
 =======
-
 The simply MYSQL operator without (or less) sql string.
-
+=======
 The table of example in below is named 'tbl_user';
 ```html
 <?php 
