@@ -1,8 +1,8 @@
 AXDBTool
 =======
-The simply MYSQL operator without (or less) sql string.
+The simply MYSQL operator without (or less) sql string in PHP.
 
-这是一个简单却非常实用的mysql操作工具，在进行简单的增删改查操作时，可以使用该工具进行快速开发，该工具能智能组装sql语句和处理查询结果为数组，开发者甚至只需一行代码就能迅速获得想要的数据库操作。
+这是一个简单却非常实用的mysql操作工具，适用于PHP5.4+，在进行简单的增删改查操作时，可以使用该工具进行快速开发，该工具能智能组装sql语句和处理查询结果为数组，开发者甚至只需一行代码就能迅速获得想要的数据库操作。
 
 
 
