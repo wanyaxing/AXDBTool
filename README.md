@@ -1,10 +1,10 @@
-DBModel
+# DBModel
 =======
 
 The simply MYSQL operator without (or less) sql string.
 
 The table of example in below is named 'tbl_user';
-
+```html
 <?php 
 
 include __dir__.'/AXDBTool/DBModel.php';
@@ -26,4 +26,7 @@ $userModel = DBModel::instance('tbl_user')->where(array('name'=>'wanyaxing'))->s
 //cache use
 
 //countAll
-...
+//...
+
+
+```
