@@ -8,7 +8,7 @@ The simply MYSQL operator without (or less) sql string.
 
 另外，我还在其中实现了一些非常实用的数据库操作技巧，如：
 
-*分页查询的page和size，大家很熟悉吧？使用AXDBTool，你还可以用page=-1，来查询倒数第一页的数据，厉害吧：）
+*分页查询的page和size，大家很熟悉吧？使用AXDBTool，你还可以用page=-1，来查询倒数第一页的数据，简单直接够暴力吧：）
 
 *同样是分页查询，在AXDBTool这款工具里，在分页查询后，你还能通过countAll()方法来获得符合本次查询的所有数据的总数，这样就可以轻松的了解了解到分页的可用最大值了哦。
 
