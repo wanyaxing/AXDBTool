@@ -6,6 +6,9 @@
  * @since 1.0
  * @version 1.0
  */
+// v150317 fix 别名，（和！的情况
+// 150207  conditions_push
+// 150122.1 + throw errow
 // 141115.1 fixed -defaultThisValueTOcheckIFNOVALUEFORTHIS
 // 141115 -defaultThisValueTOcheckIFNOVALUEFORTHIS
 // 141019 edit
@@ -79,9 +82,28 @@ class DBTool
 		}
 
 
-		public static function conditions_push(&$conditions, $p_strFormat , $p_value = '-defaultThisValueTOcheckIFNOVALUEFORTHIS'){
-
-			if (is_int($p_strFormat))
+		/**
+		 * 组合where字符串
+		 * @param  array &$conditions  目标数组
+		 * @param  string $p_strFormat key值或序号
+		 * @param  string $p_value     值
+		 * @param  string  $t1          　　表别名
+		 * @return null
+		 */
+		public static function conditions_push(&$conditions, $p_strFormat , $p_value = '-defaultThisValueTOcheckIFNOVALUEFORTHIS' ,$t1=null){
+			if ($t1!=null)
+			{
+				if (is_int($p_strFormat) && $p_value!==null)
+				{
+					$GLOBALS['t1tmpfordbtool'] = $t1;
+					$p_value = preg_replace_callback('/(^|\s|\()([^\.\(\s]+)(\s*?[!=\>\<]|\s+?(is|not|in|like|between))/', function($matches){return $matches[1].$GLOBALS['t1tmpfordbtool'].'.'.$matches[2].$matches[3];}, $p_value);
+				}
+				else if($p_strFormat!==null && !preg_match('/^[^\.\s]+\.[^\.\s]+/', $p_strFormat ) )
+				{
+					$p_strFormat = $t1.'.'.$p_strFormat;
+				}
+			}
+			if (is_int($p_strFormat) && $p_value!==null)
 			{
 				$conditions[] =  $p_value;
 			}
@@ -164,7 +186,8 @@ class DBTool
 	        }
 
 	        if(strlen($_mysqli->error)>0){
-	            $_data = 2;
+	            // $_data = 2;
+	            throw new Exception($_mysqli->error);
 	        }
 	    }
 	    return $_data;

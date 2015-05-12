@@ -9,9 +9,8 @@
 	if (!defined('DB_HOST'))
 	{
 		define('DB_HOST', '127.0.0.1');
-		define('DB_USER', 'wanyaxing');
-		define('DB_PASSWORD', 'pwd1234');
-        define('DB_DATABASE', 'tbtest');
-		define('DB_PORT', '3306');
+		define('DB_USER', 'api');
+		define('DB_PASSWORD', 'pwdLY1d2323');
+		define('DB_DATABASE', 'linyi36ss0');
 	}
 

@@ -6,6 +6,14 @@
  * @since 1.0
  * @version 1.0
  */
+// v150317 fix 别名，（和！的情况
+// v150304 fix delele 不支持别名
+// v150228 fix count 支持别名
+// v150210 fix delete 不支持别名
+// v150207 增强joinList
+// v150128 show full columns
+// v150123 show full columns
+// v020  fix：insert with null
 // v019  fix：insert with single quotes
 // v018.6  fix：update with null value
 // v018.5  fix：limit
@@ -26,6 +34,8 @@ require_once 'DBTool.php';
 class DBModel{
 		//数据库中的表名
 		public $tableName;
+		// 别名
+		public $t1;
 		//进程缓存
 	    private static $cache = array();
 
@@ -41,6 +51,7 @@ class DBModel{
 		private $order='';
 		private $group='';
 		private $join='';
+		private $joinList = array();
 
 		//查询的同时是否预算总数
 		private $isCountAll=false;
@@ -61,11 +72,20 @@ class DBModel{
 
 		/**
 		 * 构造方法
-		 * @param $tableName string  数据库表名
+		 * @param $tableName string  数据库表名 (或者 表名 空格 别名) 默认别名为t1
 		 */
 		public function __construct($tableName='',$conn=null)
 		{
+			if (strpos($tableName,' ')!==false)
+			{
+				list ($tableName,$t1) = explode(' ',$tableName,2);
+			}
+			else
+			{
+				$t1 = 't1';
+			}
 			$this->tableName=$tableName;
+			$this->t1=$t1;
 			// if (isset($conn))
 			// {
 			// 	$this->db = $conn;
@@ -97,6 +117,7 @@ class DBModel{
 			$this->order            =  ''     ;
 			$this->group            =  ''     ;
 			$this->join             =  ''     ;
+			$this->joinList         =  array();
 			$this->isCountAll       =  false  ;
 			$this->isCheckNextPage  =  false  ;
 			$this->limitPageIndex   =  null   ;
@@ -118,7 +139,7 @@ class DBModel{
 		{
 			if (count($this->fieldList)==0)
 			{
-				$sql='desc ' . $this->tableName;
+				$sql='show full columns from ' . $this->tableName;
 
 			    $_data = DBTool::queryData($sql);
 			    //先取主键字段
@@ -142,8 +163,17 @@ class DBModel{
 
 		//设置字段
 		public function field($field){
-			$field = is_array($field)?implode(',',$field):$field;
-			$this->field=$field;
+			$fields = is_array($field)?$field:explode(',',$field);
+			if ($this->t1 != null)
+			{
+				foreach ($fields as &$field) {
+					if (!preg_match('/^[^\.\s]+\.[^\.\s]+/', $field ) )
+					{
+						$field = $this->t1 .'.'.$field;
+					}
+				}
+			}
+			$this->field= implode(',',$fields);
 			return $this;
 		}
 
@@ -158,14 +188,33 @@ class DBModel{
 			}
 			if ( !is_array($where) )
 			{
-				$this->where=" WHERE {$where} ";
-				return $this;
+				$where = array($where);
 			}
 
 			$arr=array();
 			foreach($where as $key=>$value)
 			{
-				DBTool::conditions_push($arr,$key,$value);
+				if (strtolower($key) == 'joinlist')
+				{
+					if (!is_array($value))
+					{
+						throw new Exception("value of joinlist should be array();", 1);
+					}
+					foreach ($value as $_joinWhere) {
+						if (is_array($_joinWhere) && count($_joinWhere)==2 && is_array($_joinWhere[1]))
+						{
+							$this->joinWhere($_joinWhere[0],$_joinWhere[1]);
+						}
+						else
+						{
+							throw new Exception("value of joinwhere should be array(table2,p_where);", 1);
+						}
+					}
+				}
+				else
+				{
+					DBTool::conditions_push($arr,$key,$value,$this->t1);
+				}
 			}
 
 			$condition='';
@@ -190,6 +239,32 @@ class DBModel{
 				$join = ' '.$join;
 			}
 			$this->join = $join;
+			return $this;
+		}
+
+		/**
+		 * 插入多条join查询条件
+		 * @param  string $p_tableJoined    表名
+		 * @param  array  $p_onWhere        关联条件 (注意，查询条件使用 key=t1.key 这样的方式，或 t2.key = table1.key，一定要约束好t1.)
+		 * @return [type]                   [description]
+		 */
+		public function joinWhere($p_tableJoined,$p_onWhere=array())
+		{
+			if (strpos($p_tableJoined,' ')!==false)
+			{
+				list ($p_tableJoined,$t2) = explode(' ',$p_tableJoined,2);
+			}
+			else
+			{
+				$t2 = 't'.(count($this->joinList)+2);
+			}
+			$arr=array();
+			foreach($p_onWhere as $key=>$value)
+			{
+				DBTool::conditions_push($arr,$key,$value,$t2);
+			}
+			$join = ' join '.$p_tableJoined.' '.$t2.' on '.implode(' and ',$arr);
+			$this->joinList[] = $join;
 			return $this;
 		}
 
@@ -222,9 +297,16 @@ class DBModel{
 		//排序方式
 		public function order($order)
 		{
+			if ($this->t1 != null)
+			{
+				if ($order!=null && !preg_match('/^[^\.\s]+\.[^\.\s]+/', $order ) )
+				{
+					$order = $this->t1 .'.'.$order;
+				}
+			}
 			if (isset($order) && $order!=null)
 			{
-				$this->order = ' order by ' . $order;
+				$this->order = ' order by ' .$order;
 			}
 			return $this;
 		}
@@ -232,6 +314,13 @@ class DBModel{
 		//分组
 		public function group($group)
 		{
+			if ($this->t1 != null)
+			{
+				if (!preg_match('/^[^\.\s]+\.[^\.\s]+/', $group ) )
+				{
+					$group = $this->t1 .'.'.$group;
+				}
+			}
 			if (isset($group) && $group!=null)
 			{
 				$this->group = ' group by ' . $group;
@@ -291,7 +380,9 @@ class DBModel{
 					.  $this->field
 					.' FROM '
 						. $this->tableName
+						. ' ' .$this->t1
 						. $this->join
+						. implode(' ',$this->joinList)
 						. $this->where
 						. $this->group
 						. $this->order
@@ -312,6 +403,7 @@ class DBModel{
 			if (!isset($list))
 			{
 				$list = DBTool::queryData($sql);
+				$this->isSelectQueryRun = true;
 				self::$cache[md5($sql)] = $list;
 			}
 			if ($this->isCheckNextPage  && $this->limitPageIndex>0 && $this->limitPageSize>0 )
@@ -423,13 +515,16 @@ class DBModel{
 				if ($this->isCountAll && $this->isSelectQueryRun)
 				{
 				    $_sqlCount = 'SELECT FOUND_ROWS() as countNum';
+				    $this->isSelectQueryRun = false;
 				}
 				else
 				{
 					$_sqlCount = 'select count('.$field.') as countNum '
 								 .' FROM '
 									. $this->tableName
+									. ' ' .$this->t1
 									. $this->join
+									. implode(' ',$this->joinList)
 									. $this->where
 									. $this->group;
 				}
@@ -480,7 +575,7 @@ class DBModel{
 			$methods=array('avg', 'max', 'min','sum');
 			if (in_array(strtolower($method),$methods))
 			{
-				$sql="select $method({$param[0]}) as num from {$this->tableName} {$this->where}";
+				$sql="select $method({$param[0]}) as num from {$this->tableName} {$this->t1} {$this->where}";
 			    $_dataCount = DBTool::queryData($sql);
 			    return $_dataCount[0]['num'];
 			}
@@ -500,6 +595,10 @@ class DBModel{
 					$keyTmp = trim($keyTmp);
 					$valueTmp = trim($valueTmp);
 					$valueTmp = trim($valueTmp,'\'');
+				}
+				else if ($value===null)
+				{
+					continue;
 				}
 				else
 				{
@@ -559,11 +658,11 @@ class DBModel{
 				//注意 这里没做安全过滤哦
 				if (is_int($key))//key是数字，则就当value是xx=xx了
 				{
-					DBTool::conditions_push($arr,$key,$value);
+					DBTool::conditions_push($arr,$key,$value,$this->t1);
 				}
 				else if (strpos($key,' ')!==false)//key是xx＝
 				{
-					DBTool::conditions_push($arr,$key,$value);
+					DBTool::conditions_push($arr,$key,$value,$this->t1);
 				}
 				else if ($value === null)
 				{
@@ -581,7 +680,12 @@ class DBModel{
 			if (count($arr)>0)
 			{
 				$str= join(' , ', $arr);
-				$sql="update {$this->tableName} set $str {$this->where} {$this->limit}";
+				$sql='update '
+					         .$this->tableName
+					         . ' ' .$this->t1
+					         .' set ' . $str
+					         . $this->where
+					         . $this->limit;
 				return	DBTool::executeSql($sql);
 			}
 			else
@@ -608,10 +712,15 @@ class DBModel{
 			}
 			else if (empty($this->where))
 			{
-				print("DBModel.php: NO update data without where, if you want to do this, pls use updateAll.");exit();
-				return null;
+				throw new Exception('DBModel.php: NO update data without where, if you want to do this, pls use updateAll.', 1);
 			}
-			$sql="DELETE FROM  {$this->tableName} {$this->where} {$this->limit}";
+			//mysql里，delete 不支持 别名
+			$_where = preg_replace_callback('/(^|\s|\()([^\.\s\(]+\.)([^\.\(\s]+)(\s*?[!=\>\<]|\s+?(is|not|in|like|between))/', function($matches){return $matches[1].$matches[3].$matches[4];}, $this->where);
+
+			$sql='DELETE FROM '
+				         . $this->tableName
+				         . $_where
+				         . $this->limit;
 			return	DBTool::executeSql($sql);
 		}
 
