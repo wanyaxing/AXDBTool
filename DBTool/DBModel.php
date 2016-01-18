@@ -6,6 +6,14 @@
  * @since 1.0
  * @version 1.0
  */
+// v151231 selectValues 如果查询的是多字段，则等同于select了。
+// v151231 else if ($this->whereToStr() == null)
+// v151225 rand 和 now 不该使用缓存
+// v150923 优化t1逻辑和field逻辑，新增 fieldToStr() 和 fieldAdd()
+// v150806 新增whereAdd方法，重整了where相关的逻辑
+// v150805 默认$t1 = null;，如果有join 则t1 = t1
+// v150521 selectFields/selectValues selectField/selectValue
+// v150507 useT1
 // v150317 fix 别名，（和！的情况
 // v150304 fix delele 不支持别名
 // v150228 fix count 支持别名
@@ -45,7 +53,7 @@ class DBModel{
 		public $fieldList=array();
 
 		//查询条件
-		private $where='';
+		private $where=array();
 		private $limit='';
 		private $field='*';
 		private $order='';
@@ -82,7 +90,7 @@ class DBModel{
 			}
 			else
 			{
-				$t1 = 't1';
+				$t1 = null;
 			}
 			$this->tableName=$tableName;
 			$this->t1=$t1;
@@ -111,7 +119,7 @@ class DBModel{
 		//清空前置情况
 		public function init()
 		{
-			$this->where            =  ''     ;
+			$this->where            =  array()     ;
 			$this->limit            =  ''     ;
 			$this->field            =  '*'    ;
 			$this->order            =  ''     ;
@@ -161,38 +169,138 @@ class DBModel{
 		}
 
 
-		//设置字段
-		public function field($field){
-			$fields = is_array($field)?$field:explode(',',$field);
-			if ($this->t1 != null)
-			{
-				foreach ($fields as &$field) {
-					if (!preg_match('/^[^\.\s]+\.[^\.\s]+/', $field ) )
-					{
-						$field = $this->t1 .'.'.$field;
-					}
-				}
-			}
-			$this->field= implode(',',$fields);
+		//设置t1
+		public function useT1($t1='t1'){
+			$this->t1 = $t1;
 			return $this;
 		}
 
-		//条件限定
-		//支持 array('id>0') , array('id > %d'=>0) ,array('id > '=>0);
-		public function where($where)
-		{
-			if(empty($where))
+		//设置字段
+		public function field($p_field,$isAdd=false){
+
+			if(empty($p_field))
 			{
-				$this->where='';
 				return $this;
 			}
-			if ( !is_array($where) )
+			if ( !is_array($p_field) )
 			{
-				$where = array($where);
+				$p_field = explode(',',$p_field);
 			}
 
-			$arr=array();
-			foreach($where as $key=>$value)
+			$arr = $isAdd ? $this->field : array();
+
+			foreach($p_field as $key=>$value)
+			{
+				$arr[]=$value;
+			}
+
+			$this->field=$arr;
+
+			return $this;
+
+		}
+
+		/**
+		 * 追加读取字段
+		 * @param  [type] $p_field [description]
+		 * @return [type]        [description]
+		 */
+		public function fieldAdd($p_field=array())
+		{
+			return $this->field($p_field,true);
+		}
+
+		/**
+		 * 返回组装好的field字符串
+		 * @return string 内部方法
+		 */
+		protected function fieldToStr($isUseT1 = true)
+		{
+			$tmpField = $this->field;
+
+			if ( !is_array($tmpField) )
+			{
+				$tmpField = array($tmpField);
+			}
+
+			if ($this->t1 != null)
+			{
+				$GLOBALS['t1tmpfordbtool'] = $this->t1;
+				foreach ($tmpField as &$field) {
+					if (strpos($field,$this->t1)===false)
+					{
+						if (preg_match('/\(\s*([^\s][^\(\)]+?)\)/',$field))
+						{
+							$field = preg_replace_callback('/(\(\s*)([^\s][^\(\)]+?)(\))/'
+															, function($matches){return $matches[1].$GLOBALS['t1tmpfordbtool'].'.'.$matches[2].$matches[3];}
+															, $field
+															);
+						}
+						else
+						{
+							$field = $this->t1 .'.'.trim($field);
+						}
+					}
+				}
+			}
+
+			$condition='*';
+			if(count($tmpField)>0){
+				$condition= join(' , ',$tmpField);
+			}
+
+
+			return $condition;
+		}
+
+		/**
+		 * 返回组装好的where字符串
+		 * @return string 内部方法
+		 */
+		protected function whereToStr($isUseT1 = true)
+		{
+			$tmpWhere = $this->where;
+
+			if ( !is_array($tmpWhere) )
+			{
+				$tmpWhere = array($tmpWhere);
+			}
+
+			$strWhereList=array();
+			foreach($tmpWhere as $key=>$value)
+			{
+				DBTool::conditions_push($strWhereList,$key,$value,($isUseT1?$this->t1:null));
+			}
+
+			$condition='';
+			if(count($strWhereList)>0){
+				$condition=' where ' . join(' and ',$strWhereList);
+				$condition = str_replace(' = NULL',' is NULL',$condition);
+			}
+
+			return $condition;
+		}
+
+		/**
+		 * 确定查询条件
+		 * @param  string|array  $where 查询数组
+		 * @param  boolean $isAdd 是否追加，否则覆盖
+		 * @return DBModel
+		 */
+		public function where($p_where,$isAdd=false)
+		{
+			if(empty($p_where))
+			{
+				return $this;
+			}
+			if ( !is_array($p_where) )
+			{
+				$p_where = array($p_where);
+			}
+
+			$arr = $isAdd ? $this->where : array();
+
+			foreach($p_where as $key=>$value)
 			{
 				if (strtolower($key) == 'joinlist')
 				{
@@ -213,19 +321,34 @@ class DBModel{
 				}
 				else
 				{
-					DBTool::conditions_push($arr,$key,$value,$this->t1);
+					if (is_int($key))
+					{
+						if (strpos($value,'exists ')!==false)
+						{
+							if ($this->t1==null){$this->useT1('t1');}
+						}
+						$arr[]=$value;
+					}
+					else
+					{
+						$arr[$key]=$value;
+					}
 				}
 			}
 
-			$condition='';
-			if(count($arr)>0){
-				$condition=' where ' . join(' and ',$arr);
-			}
-
-			$this->where=$condition;
+			$this->where=$arr;
 
 			return $this;
+		}
 
+		/**
+		 * 追加查询条件
+		 * @param  [type] $p_where [description]
+		 * @return [type]        [description]
+		 */
+		public function whereAdd($p_where=array())
+		{
+			return $this->where($p_where,true);
 		}
 
 		//限制条件
@@ -250,6 +373,7 @@ class DBModel{
 		 */
 		public function joinWhere($p_tableJoined,$p_onWhere=array())
 		{
+			if ($this->t1==null){$this->useT1('t1');}
 			if (strpos($p_tableJoined,' ')!==false)
 			{
 				list ($p_tableJoined,$t2) = explode(' ',$p_tableJoined,2);
@@ -273,7 +397,7 @@ class DBModel{
 		{
 			if (isset($limit))
 			{
-				if (!empty($size) && $limit!=0)
+				if ($size!==null)// && $limit!=0
 				{
 					$this->limitPageIndex = $limit;
 					$this->limitPageSize = $size;
@@ -352,8 +476,8 @@ class DBModel{
 		}
 
 
-		//查询数据
-		public function select()
+		//返回对应的sql语句
+		public function sqlOfselect()
 		{
 			if ($this->limitPageIndex != 0 && $this->limitPageSize>0)
 			{
@@ -377,34 +501,46 @@ class DBModel{
 
 			$sql= 'SELECT '
 					. (($this->isCountAll)?'SQL_CALC_FOUND_ROWS ':'')
-					.  $this->field
+					.  $this->fieldToStr()
 					.' FROM '
 						. $this->tableName
 						. ' ' .$this->t1
 						. $this->join
 						. implode(' ',$this->joinList)
-						. $this->where
+						. $this->whereToStr()
 						. $this->group
 						. $this->order
 						. $this->limit;
 
-			// var_dump($sql);
-			// var_dump($this);exit;
+			return $sql;
+		}
+
+		//查询数据
+		public function select()
+		{
+			$sql = $this->sqlOfselect();
+
 			$list = null;
 			$cacheKey = md5($sql);
 			if ($this->isUseCache)
 			{
-				if (array_key_exists($cacheKey, self::$cache))
+				if (
+                        strpos($sql,'rand()')!==false
+                        || strpos($sql,'now()')!==false
+                    )
+                {//查询的语句里可不能出现函数方法啊，那可不能用缓存。
+                    $w2CacheKey_fieldValues = null;
+                }
+                else if (array_key_exists($cacheKey, self::$cache))
 				{
-					// echo 'cache';
-					$list = self::$cache[md5($sql)];
+					$list = self::$cache[$cacheKey];
 				}
 			}
 			if (!isset($list))
 			{
 				$list = DBTool::queryData($sql);
 				$this->isSelectQueryRun = true;
-				self::$cache[md5($sql)] = $list;
+				self::$cache[$cacheKey] = $list;
 			}
 			if ($this->isCheckNextPage  && $this->limitPageIndex>0 && $this->limitPageSize>0 )
 			{
@@ -425,7 +561,8 @@ class DBModel{
 		//查询数据
 		public function selectSingle()
 		{
-			$_data = $this->limit(1)->select();
+			if ($this->limit==''){$this->limit(1);}
+			$_data = $this->select();
 			if (is_array($_data) && count($_data)>0)
 			{
 				return $_data[0];
@@ -434,6 +571,59 @@ class DBModel{
 			{
 				return null;
 			}
+		}
+
+
+		//查询单独字段的值的数组，如不指定$field或指定了多个字段，则返回字段组成的字典组成的数组
+		public function selectValues($field=null)
+		{
+			if ($field!=null )
+			{
+				$this->field($field);
+			}
+			$_data = $this->select();
+			$_values = array();
+			if (is_array($_data))
+			{
+				if (count($_data)>0 && count($_data[0]) == 1)
+				{
+					foreach ($_data as $_d) {
+						foreach ($_d as $key => $value) {
+							$_values[] = $value;
+							break;
+						}
+					}
+				}
+				else
+				{
+					return $_data;
+				}
+			}
+			return $_values;
+		}
+
+		public function selectFields($field=null)
+		{
+			return $this->selectValues($field);
+		}
+
+		//查询单独数据，如不指定$field，则返回首条数据的首个字段的值
+		public function selectValue($field=null)
+		{
+			$_values = $this->limit(1)->selectValues($field);
+			if (is_array($_values) && count($_values)>0)
+			{
+				return $_values[0];
+			}
+			else
+			{
+				return null;
+			}
+		}
+
+		public function selectField($field=null)
+		{
+			return $this->selectValue($field);
 		}
 
 		//高级搜索
@@ -482,22 +672,15 @@ class DBModel{
 	                array_push($clause ,'(' . implode(' or ', $_c) . ')');
 	            }
 
-	            if ($this->where=='')
-	            {
-	            	$this->where =  ' where ' . implode(" and ",$clause);
-	            }
-	            else
-	            {
-	            	$this->where .= ' and ' . '('.implode(" and ",$clause).')';
-	            }
+            	$this->whereAdd('('.implode(" and ",$clause).')');
 
-	            if ($this->field=='')
+	            if ($this->fieldToStr()=='')
 	            {
-	            	$this->field = '('.implode('+',$score).') AS scoreplusinmodel';
+	            	$this->field('('.implode('+',$score).') AS scoreplusinmodel');
 	            }
 	            else
 	            {
-	            	$this->field .= ' ,('.implode('+',$score).') AS scoreplusinmodel';
+	            	$this->fieldAdd('('.implode('+',$score).') AS scoreplusinmodel');
 	            }
 
 	            $this->order = 'ORDER BY scoreplusinmodel DESC';
@@ -525,7 +708,7 @@ class DBModel{
 									. ' ' .$this->t1
 									. $this->join
 									. implode(' ',$this->joinList)
-									. $this->where
+									. $this->whereToStr()
 									. $this->group;
 				}
 			    $_dataCount = DBTool::queryData($_sqlCount);
@@ -555,7 +738,7 @@ class DBModel{
 				$count = $this->count();
 				$pageIndexMax = (intval(($count-1)/$pageSize)+1); //总页数
 			}
-			return $pageIndex;
+			return $pageIndexMax;
 		}
 
 		//获得真实的pageindex,如传入-1，则返回符合条件的最后一页的页码
@@ -563,7 +746,7 @@ class DBModel{
 		{
 			if ($pageIndex < 0 && $pageSize>0)
 			{
-				$pageIndexMax = $this->realPageMax();
+				$pageIndexMax = $this->realPageMax($pageSize);
 				$pageIndex += $pageIndexMax+1; //分页从1开始，第一页就是1.
 			}
 			return $pageIndex;
@@ -575,9 +758,7 @@ class DBModel{
 			$methods=array('avg', 'max', 'min','sum');
 			if (in_array(strtolower($method),$methods))
 			{
-				$sql="select $method({$param[0]}) as num from {$this->tableName} {$this->t1} {$this->where}";
-			    $_dataCount = DBTool::queryData($sql);
-			    return $_dataCount[0]['num'];
+				return $this->selectField($method.'('.$param[0].')');
 			}
 		}
 
@@ -610,7 +791,7 @@ class DBModel{
 					continue;
 				}
 				$fieldList[] =  $keyTmp;
-				if ($valueTmp=='now()')
+				if (in_array(strtolower($valueTmp),array('now()','null')))
 				{
 					$valueList[] =  DBTool::wrap2Sql($valueTmp,false);//不带引号
 				}
@@ -639,43 +820,42 @@ class DBModel{
 		/**
 		 * 执行修改，必须指定where才能执行。
 		 * @param $data array 需要更新的数据
-		 * @param $where array 条件，关联数组
+		 * @param $p_where array 条件，关联数组
 		 */
-		public function update($data,$where=null)
+		public function update($data,$p_where=null)
 		{
-
-			if (isset($where)){
-				$this->where($where);
+			if (isset($p_where)){
+				$this->where($p_where);
 			}
-			else if (empty($this->where))
+			else if ($this->whereToStr() == null)
 			{
-				print("DBModel.php: NO update data without where, if you want to do this, pls use updateAll.");exit();
+				throw new Exception("DBModel.php: NO update data without where, if you want to do this, pls use updateAll.");
 				return null;
 			}
 			$arr = array();
 			foreach($data as $key=>$value)
 			{
 				//注意 这里没做安全过滤哦
-				if (is_int($key))//key是数字，则就当value是xx=xx了
-				{
+				// if (is_int($key))//key是数字，则就当value是xx=xx了
+				// {
 					DBTool::conditions_push($arr,$key,$value,$this->t1);
-				}
-				else if (strpos($key,' ')!==false)//key是xx＝
-				{
-					DBTool::conditions_push($arr,$key,$value,$this->t1);
-				}
-				else if ($value === null)
-				{
-					continue;
-				}
-				else
-				{
-					// 做字段安全过滤
-					if(!in_array($key,$this->getMeta())){
-						continue;
-					}
-					$arr[] =  sprintf('%s = \'%s\'',$key,DBTool::wrap2Sql($value));
-				}
+				// }
+				// else if (strpos($key,' ')!==false)//key是xx＝
+				// {
+					// DBTool::conditions_push($arr,$key,$value,$this->t1);
+				// }
+				// else if ($value === null)
+				// {
+				// 	continue;
+				// }
+				// else
+				// {
+				// 	// 做字段安全过滤
+				// 	if(!in_array($key,$this->getMeta())){
+				// 		continue;
+				// 	}
+				// 	$arr[] =  sprintf('%s = \'%s\'',$key,DBTool::wrap2Sql($value));
+				// }
 			}
 			if (count($arr)>0)
 			{
@@ -684,7 +864,7 @@ class DBModel{
 					         .$this->tableName
 					         . ' ' .$this->t1
 					         .' set ' . $str
-					         . $this->where
+					         . $this->whereToStr()
 					         . $this->limit;
 				return	DBTool::executeSql($sql);
 			}
@@ -697,7 +877,7 @@ class DBModel{
 		/**
 		 * 针对全表执行修改，慎用。
 		 * @param $data array 需要更新的数据
-		 * @param $where array 条件，关联数组
+		 * @param $p_where array 条件，关联数组
 		 */
 		public function updateAll($data)
 		{
@@ -705,21 +885,19 @@ class DBModel{
 		}
 
 		//删除符合条件的数据。必须指定where才能执行。
-		public function delete($where=null)
+		public function delete($p_where=null)
 		{
-			if (isset($where)){
-				$this->where($where);
+			if (isset($p_where)){
+				$this->where($p_where);
 			}
-			else if (empty($this->where))
+			else if ($this->whereToStr() == null)
 			{
-				throw new Exception('DBModel.php: NO update data without where, if you want to do this, pls use updateAll.', 1);
+				throw new Exception('DBModel.php: NO update data without where, if you want to do this, pls use deleteAll.', 1);
 			}
-			//mysql里，delete 不支持 别名
-			$_where = preg_replace_callback('/(^|\s|\()([^\.\s\(]+\.)([^\.\(\s]+)(\s*?[!=\>\<]|\s+?(is|not|in|like|between))/', function($matches){return $matches[1].$matches[3].$matches[4];}, $this->where);
 
 			$sql='DELETE FROM '
 				         . $this->tableName
-				         . $_where
+				         . $this->whereToStr(false)//mysql里，delete 不支持 别名
 				         . $this->limit;
 			return	DBTool::executeSql($sql);
 		}
@@ -745,8 +923,8 @@ class DBModel{
 			// $data['positionSourceCount']
 			// $datas =  $modelObj->insert($datass);
 			// $datass=array('sourceCount'=>99999699);
-			// $where = array('sourceID'=>47,'sourceName'=>'wwwww');
-			// $datas =  $modelObj->update($datass,$where);
+			// $p_where = array('sourceID'=>47,'sourceName'=>'wwwww');
+			// $datas =  $modelObj->update($datass,$p_where);
 			// $datas =  $modelObj->count();
 			// $datas =  $modelObj->sum(sourceID);
 			// echo '<pre>';
