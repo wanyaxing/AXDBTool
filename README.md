@@ -18,7 +18,7 @@ The simply MYSQL operator without (or less) sql string in PHP.
 
 =======
 The table of example in below is named 'tbl_user';
-```html
+```php
 <?php
 
 include __dir__.'/DBTool/DBModel.php';
